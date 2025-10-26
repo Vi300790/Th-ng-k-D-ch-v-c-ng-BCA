@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Quản lý người đến liên hệ công tác - Công an phường Quy Nhơn Bắc</title>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://unpkg.com/html5-qrcode"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-green-50 min-h-screen flex flex-col items-center py-6">
+  <!-- Header -->
+  <div class="flex flex-col items-center mb-6">
+    <img src="LOGO QNB.png" alt="Logo Công an phường Quy Nhơn Bắc" class="w-24 mb-3">
+    <h1 class="text-2xl font-bold text-green-800 uppercase">Công an phường Quy Nhơn Bắc</h1>
+    <h2 class="text-lg text-green-700">Ứng dụng quản lý người đến liên hệ công tác</h2>
+  </div>
+
+  <!-- Input Form -->
+  <div class="bg-white shadow-lg rounded-2xl p-6 w-11/12 md:w-2/3 lg:w-1/2">
+    <div class="flex flex-col gap-3">
+      <input id="nameInput" type="text" placeholder="Nhập họ tên người đến..." 
+             class="border rounded-lg p-3 w-full focus:ring-2 focus:ring-green-600 outline-none">
+      <button onclick="addVisitor()" 
+              class="bg-green-700 text-white py-2 rounded-lg hover:bg-green-800 transition">Thêm vào danh sách</button>
+      <button onclick="startQR()" 
+              class="bg-green-500 text-white py-2 rounded-lg hover:bg-green-600 transition">📷 Quét mã QR</button>
+      <div id="qr-reader" class="hidden mt-4"></div>
+    </div>
+  </div>
+
+  <!-- Filter and Actions -->
+  <div class="mt-6 flex flex-wrap justify-center gap-3">
+    <input id="filterDate" type="date" class="border p-2 rounded-lg">
+    <button onclick="filterByDate()" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700">Lọc theo ngày</button>
+    <button onclick="exportToExcel()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">📁 Xuất Excel</button>
+    <button onclick="clearList()" class="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700">🗑️ Xóa danh sách</button>
+  </div>
+
+  <!-- Table -->
+  <div class="mt-6 w-11/12 md:w-2/3 lg:w-1/2 bg-white shadow rounded-2xl overflow-hidden">
+    <table class="w-full border-collapse">
+      <thead class="bg-green-700 text-white">
+        <tr>
+          <th class="p-2 text-left">STT</th>
+          <th class="p-2 text-left">Họ và tên</th>
+          <th class="p-2 text-left">Thời gian đến</th>
+        </tr>
+      </thead>
+      <tbody id="visitorList" class="divide-y"></tbody>
+    </table>
+  </div>
+
+  <script>
+    let visitors = JSON.parse(localStorage.getItem("visitors")) || [];
+
+    function saveData() {
+      localStorage.setItem("visitors", JSON.stringify(visitors));
+    }
+
+    function displayVisitors(list = visitors) {
+      const tbody = document.getElementById("visitorList");
+      tbody.innerHTML = "";
+      list
+        .sort((a, b) => new Date(a.time) - new Date(b.time))
+        .forEach((v, i) => {
+          const row = `<tr class="hover:bg-green-50">
+            <td class="p-2">${i + 1}</td>
+            <td class="p-2">${v.name}</td>
+            <td class="p-2">${new Date(v.time).toLocaleString("vi-VN")}</td>
+          </tr>`;
+          tbody.innerHTML += row;
+        });
+    }
+
+    function addVisitor(name = null) {
+      const input = document.getElementById("nameInput");
+      const visitorName = name || input.value.trim();
+      if (visitorName === "") {
+        alert("Vui lòng nhập họ tên!");
+        return;
+      }
+      const newVisitor = { name: visitorName, time: new Date().toISOString() };
+      visitors.push(newVisitor);
+      saveData();
+      displayVisitors();
+      input.value = "";
+    }
+
+    function clearList() {
+      if (confirm("Bạn có chắc muốn xóa toàn bộ danh sách hôm nay?")) {
+        visitors = [];
+        saveData();
+        displayVisitors();
+      }
+    }
+
+    function exportToExcel() {
+      if (visitors.length === 0) {
+        alert("Danh sách trống, không thể xuất!");
+        return;
+      }
+      const data = visitors.map((v, i) => ({
+        STT: i + 1,
+        "Họ và tên": v.name,
+        "Thời gian đến": new Date(v.time).toLocaleString("vi-VN")
+      }));
+      const worksheet = XLSX.utils.json_to_sheet(data);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Danh sách");
+      XLSX.writeFile(workbook, "Danh_sach_nguoi_den.xlsx");
+    }
+
+    function filterByDate() {
+      const dateInput = document.getElementById("filterDate").value;
+      if (!dateInput) {
+        displayVisitors();
+        return;
+      }
+      const filtered = visitors.filter(v => v.time.startsWith(dateInput));
+      displayVisitors(filtered);
+    }
+
+    function startQR() {
+      const qrContainer = document.getElementById("qr-reader");
+      qrContainer.classList.toggle("hidden");
+      if (!qrContainer.classList.contains("hidden")) {
+        const html5QrCode = new Html5Qrcode("qr-reader");
+        html5QrCode.start(
+          { facingMode: "environment" },
+          { fps: 10, qrbox: 250 },
+          (decodedText) => {
+            addVisitor(decodedText);
+            html5QrCode.stop();
+            qrContainer.classList.add("hidden");
+          },
+          (errorMessage) => {}
+        );
+      }
+    }
+
+    displayVisitors();
+  </script>
+</body>
+</html>
